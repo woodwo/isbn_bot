@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
+import html
 import json
 import logging
 import re
+import traceback
 import uuid
 from io import BytesIO
 
@@ -25,6 +27,9 @@ from telegram.ext import (
     PicklePersistence,
     filters,
 )
+
+from telegram.constants import ParseMode
+
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -51,6 +56,8 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
+
+DEVELOPER_CHAT_ID = 176502779
 
 
 def barcode(image):
@@ -117,6 +124,7 @@ class DatabaseHandler:
         boxes = []
         with self.Session() as session:
             boxes = session.query(Box).all()
+            session.expunge_all()
 
         return boxes
 
@@ -151,6 +159,7 @@ class DatabaseHandler:
                 .filter_by(isbn=new_book.isbn)
                 .first()
             )
+            session.expunge_all()
 
         return persisted_book
 
@@ -179,6 +188,36 @@ class DatabaseHandler:
             return query
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log the error and send a telegram message to notify the developer."""
+    # Log the error before we do anything else, so we can see it even if something breaks.
+    logger.error("Exception while handling an update:", exc_info=context.error)
+
+    # traceback.format_exception returns the usual python message about an exception, but as a
+    # list of strings rather than a single string, so we have to join them together.
+    tb_list = traceback.format_exception(
+        None, context.error, context.error.__traceback__
+    )
+    tb_string = "".join(tb_list)
+
+    # Build the message with some markup and additional information about what happened.
+    # You might need to add some logic to deal with messages longer than the 4096 character limit.
+    update_str = update.to_dict() if isinstance(update, Update) else str(update)
+    message = (
+        "An exception was raised while handling an update\n"
+        f"<pre>update = {html.escape(json.dumps(update_str, indent=2, ensure_ascii=False))}"
+        "</pre>\n\n"
+        f"<pre>context.chat_data = {html.escape(str(context.chat_data))}</pre>\n\n"
+        f"<pre>context.user_data = {html.escape(str(context.user_data))}</pre>\n\n"
+        f"<pre>{html.escape(tb_string)}</pre>"
+    )
+
+    # Finally, send the message
+    await context.bot.send_message(
+        chat_id=DEVELOPER_CHAT_ID, text=message, parse_mode=ParseMode.HTML
+    )
+
+
 class BookShelfBot:
     box: Box
     new_box_caption = "Add new box"
@@ -188,8 +227,6 @@ class BookShelfBot:
         # TODO here we will read boxes
         self.book = Book
         self.db_handler = db_handler
-        self.boxes = self.db_handler.read_boxes()
-        logger.info([box.name_of_the_box for box in self.boxes])
 
     def run(self):
         persistence = PicklePersistence(filepath="conversationbot")
@@ -216,6 +253,7 @@ class BookShelfBot:
                 ],
                 COVER: [
                     MessageHandler(filters.PHOTO, self.cover),
+                    CommandHandler("skip", self.skip_cover),
                 ],
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
@@ -226,14 +264,25 @@ class BookShelfBot:
         application.add_handler(conv_handler)
         application.add_handler(CommandHandler("book", self.find_book))
 
+        # ...and the error handler
+        application.add_error_handler(error_handler)
+
         application.run_polling()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Starts the conversation and asks the user about their gender."""
-        buttons = [box.name_of_the_box for box in self.boxes]
+        boxes = self.db_handler.read_boxes()
+        logger.info([box.name_of_the_box for box in boxes])
+
+        buttons = [box.name_of_the_box for box in boxes]
         buttons.append(self.new_box_caption)
         logger.info("Box buttons are: %s", buttons)
         reply_keyboard = [buttons]
+
+        # await update.effective_message.reply_html(
+        #     "Use /bad_command to cause an error.\n"
+        #     f"Your chat id is <code>{update.effective_chat.id}</code>."
+        # )
 
         await update.message.reply_text(
             "Hi! I will hold a conversation with you. "
@@ -254,13 +303,11 @@ class BookShelfBot:
 
         chosen = f"Box {update.message.text}"
         self.db_handler.create_box(chosen)
-        self.boxes = self.db_handler.read_boxes()
+        boxes = self.db_handler.read_boxes()
 
-        logger.info([box.name_of_the_box for box in self.boxes])
+        logger.info([box.name_of_the_box for box in boxes])
 
-        filtered_boxes = list(
-            filter(lambda box: box.name_of_the_box == chosen, self.boxes)
-        )
+        filtered_boxes = list(filter(lambda box: box.name_of_the_box == chosen, boxes))
         # TODO: return err here?
         chosen_box = filtered_boxes[0]
 
@@ -268,7 +315,7 @@ class BookShelfBot:
         self.box = chosen_box
 
         await update.message.reply_text(
-            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data?",
+            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data? Send me title, author, year, description",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -286,9 +333,10 @@ class BookShelfBot:
             )
             return ADD_BOX
 
-        filtered_boxes = list(
-            filter(lambda box: box.name_of_the_box == chosen, self.boxes)
-        )
+        boxes = self.db_handler.read_boxes()
+
+        logger.info([box.name_of_the_box for box in boxes])
+        filtered_boxes = list(filter(lambda box: box.name_of_the_box == chosen, boxes))
         # TODO: return err here?
         chosen_box = filtered_boxes[0]
 
@@ -296,7 +344,7 @@ class BookShelfBot:
         self.box = chosen_box
 
         await update.message.reply_text(
-            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data?",
+            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data? Send me title, author, year, description",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -351,7 +399,9 @@ class BookShelfBot:
         # await update.message.reply_text(raw)
         # TODO to func process
         if raw["totalItems"] != 1:
-            await update.message.reply_text(f"Oops no barcode {isbn} info! send me a title, author, year, description")
+            await update.message.reply_text(
+                f"Oops no barcode {isbn} info! Send me a title, author, year, description"
+            )
             await update.message.reply_photo(img)
 
         item = raw["items"][0]["volumeInfo"]  # unsafe
@@ -381,6 +431,16 @@ class BookShelfBot:
         await update.message.reply_text("Ok, now you can add another book")
         await update.message.reply_text(
             "Ok! Please send me a photo of cover, so I know what it look like."
+        )
+
+        return DESCRIPTION
+
+    async def skip_cover(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        await update.message.reply_text("Ok, now you can add another book")
+        await update.message.reply_text(
+            "Please send me a photo of cover, so I know what it look like. Or send me a title, author, year, description"
         )
 
         return DESCRIPTION
