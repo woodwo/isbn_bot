@@ -1,0 +1,77 @@
+name: Build Docker image
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install doctl 
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_REGISTRY_TOKEN }}
+
+      - name: Log in to DO Container Registry 
+        run: doctl registry login --expiry-seconds 600
+
+      - name: Build image 
+        run: docker build -t isbnbot .
+
+      - name: Tag image 
+        run:
+          docker tag isbnbot registry.digitalocean.com/isbn/isbnbot:latest
+
+      - name: Push image to DO Container Registry 
+        run: docker push registry.digitalocean.com/isbn/isbnbot:latest
+
+
+  copy-serv-file:
+    runs-on: ubuntu-latest
+    steps:      
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Add token to env
+        run:  sed -i "6a Environment=TOKEN=${{ secrets.TELEGRAM_TOKEN }}" bot.service
+
+      - name: SCP Command to Transfer Files
+        uses: appleboy/scp-action@v0.1.3
+        with:
+            host: ${{ secrets.SSH_HOST }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            source: bot.service
+            target: /etc/systemd/system/
+
+  login-do:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Login to registry from droplet
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+            host: ${{ secrets.SSH_HOST }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            script: |
+              snap install doctl && snap connect doctl:dot-docker && doctl registry login --expiry-seconds 600 --access-token ${{ secrets.DIGITALOCEAN_REGISTRY_TOKEN }}
+              
+
+  apply-service:
+    runs-on: ubuntu-latest
+    needs: [copy-serv-file, login-do, build]
+    steps:
+      - name: Restarts the service
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+            host: ${{ secrets.SSH_HOST }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            script: |
+              sudo systemctl daemon-reload && sudo systemctl restart bot.service && sudo systemctl status bot.service

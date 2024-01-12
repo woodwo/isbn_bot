@@ -1,0 +1,15 @@
+[Unit]
+Description=ISBN bot
+Requires=docker.service
+After=docker.service
+
+[Service]
+Restart=always
+ExecStartPre=-/usr/bin/docker stop isbnbot
+ExecStartPre=-/usr/bin/docker rm isbnbot
+ExecStartPre=/usr/bin/docker pull registry.digitalocean.com/isbn/isbnbot:latest
+ExecStart=/usr/bin/docker run --name isbnbot -e TOKEN=${TOKEN} registry.digitalocean.com/isbn/isbnbot:latest
+ExecStop=/usr/bin/docker stop isbnbot
+
+[Install]
+WantedBy=multi-user.target
