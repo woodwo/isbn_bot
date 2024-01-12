@@ -6,9 +6,10 @@ After=docker.service
 [Service]
 Restart=always
 ExecStartPre=-/usr/bin/docker stop isbnbot
+ExecStartPre=-/usr/bin/docker volume create --name dbdata
 ExecStartPre=-/usr/bin/docker rm isbnbot
-ExecStartPre=/usr/bin/docker pull registry.digitalocean.com/isbn/isbnbot:latest
-ExecStart=/usr/bin/docker run --name isbnbot -e TOKEN=${TOKEN} registry.digitalocean.com/isbn/isbnbot:latest
+ExecStartPre=/usr/bin/docker pull registry.digitalocean.com/tutorhelp/isbnbot:latest
+ExecStart=/usr/bin/docker run --name isbnbot -e TOKEN=${TOKEN} -v dbdata:/app/data/ registry.digitalocean.com/tutorhelp/isbnbot:latest
 ExecStop=/usr/bin/docker stop isbnbot
 
 [Install]

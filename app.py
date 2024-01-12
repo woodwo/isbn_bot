@@ -446,5 +446,5 @@ if __name__ == "__main__":
         print("Token not found in the environment variable.")
         sys.exit(1)
 
-    bot = BookShelfBot(token, DatabaseHandler("sqlite:///books.db"))
+    bot = BookShelfBot(token, DatabaseHandler("sqlite:///data/books.db"))
     bot.run()
