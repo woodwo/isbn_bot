@@ -45,8 +45,6 @@ import cv2
 from pyzbar.pyzbar import decode
 import urllib.request
 
-# LOGGING_CHANNEL = -1001215206789
-
 # Enable logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -58,6 +56,23 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 DEVELOPER_CHAT_ID = 176502779
+
+from functools import wraps
+
+LIST_OF_ADMINS = [176502779, 445937181]
+
+
+def restricted_method(func):
+    @wraps(func)
+    async def wrapped(instance, update, context, *args, **kwargs):
+        user_id = update.effective_user.id
+        if user_id not in LIST_OF_ADMINS:
+            logger.warn(f"Unauthorized access denied for {user_id}.")
+            await update.message.reply_text("Sorry, this bot is not ready for production yet ¯\_(ツ)_/¯.")
+            return
+        return await func(instance, update, context, *args, **kwargs)
+
+    return wrapped
 
 
 def barcode(image):
@@ -71,10 +86,8 @@ def barcode(image):
     if not detectedBarcodes:
         print("Barcode Not Detected or your barcode is blank/corrupted!")
     else:
-
         # Traverse through all the detected barcodes in image
         for barcode in detectedBarcodes:
-
             # Locate the barcode position in image
             (x, y, w, h) = barcode.rect
 
@@ -85,7 +98,6 @@ def barcode(image):
             )
 
             if barcode.data != "":
-
                 # Print the barcode data
                 logger.info("Barcode on %s is: %s", image, barcode.data)
                 cv2.imwrite(image, img)
@@ -269,6 +281,7 @@ class BookShelfBot:
 
         application.run_polling()
 
+    @restricted_method
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Starts the conversation and asks the user about their gender."""
         boxes = self.db_handler.read_boxes()
@@ -297,6 +310,7 @@ class BookShelfBot:
 
         return BOX
 
+    @restricted_method
     async def add_box(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Chose self.box (or add a new one too)."""
         logger.info("Adding box: %s", update.message.text)
@@ -321,6 +335,7 @@ class BookShelfBot:
 
         return DESCRIPTION
 
+    @restricted_method
     async def box(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Chose self.box (or add a new one too)."""
         logger.info("Box option: %s", update.message.text)
@@ -350,6 +365,7 @@ class BookShelfBot:
 
         return DESCRIPTION
 
+    @restricted_method
     async def description(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -373,6 +389,7 @@ class BookShelfBot:
 
         return COVER
 
+    @restricted_method
     async def recognize_isbn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if (
             not update.message
@@ -421,6 +438,7 @@ class BookShelfBot:
 
         return COVER
 
+    @restricted_method
     async def cover(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Stores the photo and asks for a location."""
         file = await downloader(update, context)
@@ -435,6 +453,7 @@ class BookShelfBot:
 
         return DESCRIPTION
 
+    @restricted_method
     async def skip_cover(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -445,6 +464,7 @@ class BookShelfBot:
 
         return DESCRIPTION
 
+    @restricted_method
     async def find_book(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> int:
@@ -480,6 +500,7 @@ class BookShelfBot:
                         f"Opps! No cover image for this book"
                     )
 
+    @restricted_method
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Cancels and ends the conversation."""
         user = update.message.from_user
