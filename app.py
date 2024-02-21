@@ -409,7 +409,14 @@ class BookShelfBot:
             await update.message.reply_text("Something went wrong, try again")
             return
 
-        isbn, img = barcode(file.as_posix())
+        try:
+            isbn, img = barcode(file.as_posix())
+        except TypeError:
+            await update.message.reply_text(
+                f"Oops no barcode {isbn} info! Send me a title, author, year, description"
+            )
+            await update.message.reply_photo(img)
+
         raw = isbn_db(isbn.decode("utf-8"))
         logger.info(raw)
 
