@@ -381,7 +381,7 @@ class BookShelfBot:
         else:
             # Handle case when none of the delimiters are found
             await update.message.reply_text(
-                "Sorry, no delimiters in the message, try comma plz."
+                "Sorry, no delimiters in the message, try comma -> ,"
             )
             return DESCRIPTION
 
@@ -466,9 +466,9 @@ class BookShelfBot:
         logger.info("Photo of cover: %s", file.as_posix())
         self.db_handler.add_image_to_book(self.book, file.read_bytes())
 
-        await update.message.reply_text("Ok, now you can add another book")
+        await update.message.reply_text("Ok, done, now you can add another book")
         await update.message.reply_text(
-            "Ok! Please send me a photo of cover, so I know what it look like."
+            "Please send me a photo of cover, so I know what it look like. Or send me a title, author, year, description."
         )
 
         return DESCRIPTION
@@ -479,7 +479,7 @@ class BookShelfBot:
     ) -> int:
         await update.message.reply_text("Ok, now you can add another book")
         await update.message.reply_text(
-            "Please send me a photo of cover, so I know what it look like. Or send me a title, author, year, description"
+            "Please send me a photo of cover, so I know what it look like. Or send me a title, author, year, description."
         )
 
         return DESCRIPTION
