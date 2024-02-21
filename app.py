@@ -44,6 +44,8 @@ from sqlalchemy import or_
 import cv2
 from pyzbar.pyzbar import decode
 import urllib.request
+from transliterate import translit
+
 
 # Enable logging
 logging.basicConfig(
@@ -60,6 +62,11 @@ DEVELOPER_CHAT_ID = 176502779
 from functools import wraps
 
 LIST_OF_ADMINS = [176502779, 445937181]
+
+
+# Function to transliterate Russian text to English
+def transliterate_russian_to_english(text):
+    return translit(text, "ru", reversed=True)
 
 
 def restricted_method(func):
@@ -270,7 +277,11 @@ class BookShelfBot:
                     CommandHandler("skip", self.skip_cover),
                 ],
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[
+                CommandHandler("cancel", self.cancel),
+                CommandHandler("stop", self.cancel),
+                CommandHandler("exit", self.cancel),
+            ],
             name="conversation",
             # persistent=True,
         )
@@ -361,7 +372,7 @@ class BookShelfBot:
         self.box = chosen_box
 
         await update.message.reply_text(
-            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data? Send me title, author, year, description",
+            f"You selected box: {chosen_box.name_of_the_box}, now put a book to it. What is the book data? Send me barcode photo or title, author, year, description",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -377,6 +388,15 @@ class BookShelfBot:
         for delimiter in delimiters:
             if delimiter in update.message.text:
                 title, author, year, description = update.message.text.split(delimiter)
+
+                # Transliterate if text is in Russian
+                if any(
+                    cyrillic_char in title + author + year + description
+                    for cyrillic_char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+                ):
+                    title = transliterate_russian_to_english(title)
+                    author = transliterate_russian_to_english(author)
+                    description = transliterate_russian_to_english(description)
                 break
         else:
             # Handle case when none of the delimiters are found
