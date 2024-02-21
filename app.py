@@ -68,7 +68,9 @@ def restricted_method(func):
         user_id = update.effective_user.id
         if user_id not in LIST_OF_ADMINS:
             logger.warn(f"Unauthorized access denied for {user_id}.")
-            await update.message.reply_text("Sorry, this bot is not ready for production yet ¯\_(ツ)_/¯.")
+            await update.message.reply_text(
+                "Sorry, this bot is not ready for production yet ¯\_(ツ)_/¯."
+            )
             return
         return await func(instance, update, context, *args, **kwargs)
 
@@ -371,7 +373,17 @@ class BookShelfBot:
     ) -> int:
         """Stores the selected description and asks for a photo."""
         logger.info("Description of new book: %s", update.message.text)
-        title, author, year, description = update.message.text.split(",")
+        delimiters = [",", ";", "|", "\n"]  # Add more delimiters as needed
+        for delimiter in delimiters:
+            if delimiter in update.message.text:
+                title, author, year, description = update.message.text.split(delimiter)
+                break
+        else:
+            # Handle case when none of the delimiters are found
+            await update.message.reply_text(
+                "Sorry, no delimiters in the message, try comma plz."
+            )
+            return DESCRIPTION
 
         self.book = self.db_handler.create_book(
             title=title,  # unsafe
@@ -413,9 +425,9 @@ class BookShelfBot:
             isbn, img = barcode(file.as_posix())
         except TypeError:
             await update.message.reply_text(
-                f"Oops no barcode {isbn} info! Send me a title, author, year, description"
+                f"Oops no barcode found info! Send me a title, author, year, description"
             )
-            await update.message.reply_photo(img)
+            return DESCRIPTION
 
         raw = isbn_db(isbn.decode("utf-8"))
         logger.info(raw)
@@ -427,6 +439,7 @@ class BookShelfBot:
                 f"Oops no barcode {isbn} info! Send me a title, author, year, description"
             )
             await update.message.reply_photo(img)
+            return DESCRIPTION
 
         item = raw["items"][0]["volumeInfo"]  # unsafe
         self.book = self.db_handler.create_book(
