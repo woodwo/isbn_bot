@@ -208,6 +208,17 @@ class DatabaseHandler:
             )
             return query
 
+    def books_in_box(self, box_name):
+        logger.info(f"Find in box named: {box_name}")
+
+        with self.Session() as session:
+            box = session.query(Box).filter_by(name_of_the_box=box_name).first()
+            if box:
+                books = session.query(Book).filter_by(box=box).all()
+                return books
+            else:
+                return []
+
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and send a telegram message to notify the developer."""
@@ -288,6 +299,8 @@ class BookShelfBot:
 
         application.add_handler(conv_handler)
         application.add_handler(CommandHandler("book", self.find_book))
+        application.add_handler(CommandHandler("find", self.find_book))
+        application.add_handler(CommandHandler("box", self.books_by_box))
 
         # ...and the error handler
         application.add_error_handler(error_handler)
@@ -514,10 +527,15 @@ class BookShelfBot:
 
         # Check if any arguments were provided
         if not args:
-            await update.message.reply_text(
-                "Please provide a keyword to search for in /book command."
-            )
+            await update.message.reply_text("Please provide a keyword to search for")
             return
+
+        for arg in args:
+            if any(
+                cyrillic_char in arg
+                for cyrillic_char in "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+            ):
+                args.append(transliterate_russian_to_english(arg))
 
         for arg in args:
             books = self.db_handler.search_books_by_keyword(arg)
@@ -539,6 +557,20 @@ class BookShelfBot:
                     await update.message.reply_text(
                         f"Opps! No cover image for this book"
                     )
+
+    @restricted_method
+    async def books_by_box(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
+        box_name = self.box.__str__()  # TODO by box itself
+
+        books = self.db_handler.books_in_box(box_name)
+        if books:
+            book_list = "\n".join([f"{book.title} - {book.author}" for book in books])
+            await update.message.reply_text(f"Books in {box_name}:\n{book_list}")
+        else:
+            await update.message.reply_text(f"No books found in {box_name}")
+        return DESCRIPTION
 
     @restricted_method
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
